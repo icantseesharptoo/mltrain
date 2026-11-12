@@ -186,5 +186,63 @@
     ]
   };
 
-  TOPICS.push({ id: 'kmeans', title: 'K-Means Clustering', subs: [assign, update] });
+  const makeExam = () => {
+    for (;;) {
+      const pts = Array.from({ length: 6 }, () => [R.int(1, 9), R.int(1, 9)]);
+      if (new Set(pts.map(p => p.join(','))).size < 6) continue;
+      const init = R.sample([0, 1, 2, 3, 4, 5], 3).sort();
+      const cents = init.map(i => pts[i]);
+      const ds = pts.map(p => cents.map(q => dist(p, q)));
+      const gaps = ds.every(row => {
+        const s = row.slice().sort((a, b) => a - b);
+        return s[1] - s[0] >= 0.1;
+      });
+      if (gaps) return { pts, init, cents, ds, cl: ds.map(row => row.indexOf(Math.min(...row))) };
+    }
+  };
+
+  const examParts = e => {
+    const newC = e.cents.map((_, k) => {
+      const m = e.pts.filter((_, i) => e.cl[i] === k);
+      return [sum(m.map(p => p[0])) / m.length, sum(m.map(p => p[1])) / m.length, m.length];
+    });
+    return [
+      {
+        title: 'Perform the assignment step of the first iteration. Give the Euclidean distance of every point to each centroid and the cluster it joins.',
+        grid: {
+          head: ['Distance to C1', 'Distance to C2', 'Distance to C3', 'Cluster (1, 2 or 3)'],
+          rows: e.pts.map((p, i) => `A${i + 1} (${p[0]}, ${p[1]})`)
+        },
+        fields: e.pts.flatMap((_, i) => [
+          fld('', e.ds[i][0], 2),
+          fld('', e.ds[i][1], 2),
+          fld('', e.ds[i][2], 2),
+          fld('', e.cl[i] + 1, 0)
+        ]),
+        work: e.pts.map(
+          (p, i) =>
+            `A${i + 1}: ${e.ds[i].map((d, k) => `d(C${k + 1}) = ${num(d)}`).join(', ')} → cluster ${e.cl[i] + 1}`
+        )
+      },
+      {
+        title: 'Update the centroids: calculate the new position of each cluster centre.',
+        grid: { head: ['x', 'y'], rows: ['C1', 'C2', 'C3'] },
+        fields: newC.flatMap(c => [fld('', c[0], 2), fld('', c[1], 2)]),
+        work: newC.map((c, k) => {
+          const m = e.pts.filter((_, i) => e.cl[i] === k);
+          return `C${k + 1}: x = (${m.map(p => p[0]).join(' + ')}) / ${c[2]} = ${num(c[0])}, y = (${m.map(p => p[1]).join(' + ')}) / ${c[2]} = ${num(c[1])}`;
+        })
+      }
+    ];
+  };
+
+  const exam = {
+    make: makeExam,
+    context: e =>
+      `<p>Cluster the following points into 3 groups using K-Means with Euclidean distance. The initial centres are ${e.init.map((i, k) => `A${i + 1} for C${k + 1}`).join(', ')}.</p>` +
+      H.table(['Point', 'x', 'y'], e.pts.map((p, i) => [`A${i + 1}`, p[0], p[1]]), { rowHeads: true }),
+    parts: examParts
+  };
+
+  TOPICS.push({ id: 'kmeans', title: 'K-Means Clustering', subs: [assign, update], exam });
 })();

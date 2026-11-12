@@ -305,5 +305,53 @@
     ]
   };
 
-  TOPICS.push({ id: 'gini', title: 'Decision Tree with Gini', subs: [impurity, gainSub, root] });
+  const examParts = c => {
+    const rp = rootParts(c);
+    const n = c.rows.length;
+    return [
+      {
+        title: 'Calculate the Gini Impurity of the whole dataset.',
+        fields: [
+          fld('Yes count', rp.res[0].yes, 0),
+          fld('No count', n - rp.res[0].yes, 0),
+          fld('GI(S)', rp.res[0].gi0, 3)
+        ],
+        work: [
+          `Yes = ${rp.res[0].yes}, No = ${n - rp.res[0].yes}`,
+          `GI(S) = 1 − (${rp.res[0].yes}/${n})² − (${n - rp.res[0].yes}/${n})² = ${num(rp.res[0].gi0, 3)}`
+        ]
+      },
+      ...c.attrs.map((a, i) => {
+        const r = rp.res[i];
+        return {
+          title: `Calculate the Gini Gain of ${a}: the impurity and weight of every value, the weighted impurity and the gain.`,
+          fields: [
+            ...r.groups.flatMap(g => [fld(`GI(${a} = ${g.v})`, g.gi, 3), fld(`Weight of ${g.v}`, g.w, 1)]),
+            fld('Weighted impurity', r.weighted, 3),
+            fld(`Gini Gain (${a})`, r.gain, 3)
+          ],
+          work: [
+            ...r.groups.map(subGiLine),
+            ...r.groups.map(g => `w(${g.v}) = ${g.n} / ${n} = ${num(g.w, 1)}`),
+            weightedLine(r),
+            `GG = ${num(r.gi0, 3)} − ${num(r.weighted, 3)} = ${num(r.gain, 3)}`
+          ]
+        };
+      }),
+      {
+        title: `Which attribute should be the root of the tree? Enter its number (${c.attrs.map((a, i) => `${i + 1} = ${a}`).join(', ')}).`,
+        fields: [fld('Root attribute number', rp.best + 1, 0)],
+        work: [`Largest Gini Gain: ${c.attrs[rp.best]} (${num(rp.gains[rp.best], 3)})`]
+      }
+    ];
+  };
+
+  const exam = {
+    make: () => makeRoot(2),
+    context: c =>
+      `<p>The dataset below describes fruits and whether they are bitten. Build a decision tree using Gini Impurity and Gini Gain.</p>${rawTable(c.rows, c.attrs)}`,
+    parts: examParts
+  };
+
+  TOPICS.push({ id: 'gini', title: 'Decision Tree with Gini', subs: [impurity, gainSub, root], exam });
 })();

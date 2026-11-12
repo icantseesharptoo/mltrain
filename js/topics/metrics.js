@@ -236,5 +236,96 @@
     ]
   };
 
-  TOPICS.push({ id: 'metrics', title: 'Classification Metrics', subs: [confusion, prf, compare] });
+  const makeExam = () => {
+    for (;;) {
+      const c = makeCm(1);
+      const mk = () => {
+        const p = (R.int(10, 18) * 5) / 100;
+        const r = (R.int(10, 18) * 5) / 100;
+        return { acc: R.int(70, 90) / 100, p, r, f1: rnd((2 * p * r) / (p + r), 2) };
+      };
+      const m = [mk(), mk()];
+      const m3 = {
+        acc: rnd((c.tp + c.tn) / tot(c), 2),
+        p: rnd(c.tp / (c.tp + c.fp), 2),
+        r: rnd(c.tp / (c.tp + c.fn), 2),
+        f1: rnd(f1Of(c), 2)
+      };
+      const all = [...m, m3];
+      const best = key => {
+        const v = all.map(x => x[key]).sort((a, b) => b - a);
+        return v[0] - v[1] >= 0.02 ? all.findIndex(x => x[key] === v[0]) + 1 : 0;
+      };
+      const bf = best('f1');
+      const br = best('r');
+      if (bf && br) return { c, m, m3, bf, br };
+    }
+  };
+
+  const examParts = e => {
+    const { c, m3 } = e;
+    const p = c.tp + c.fn;
+    const n = c.fp + c.tn;
+    const t = tot(c);
+    const s = (p / t) * 100;
+    return [
+      {
+        title: 'Is the dataset balanced? Calculate the class shares and the imbalance ratio. Balanced means each class holds roughly 40%–60% of the data.',
+        fields: [
+          fld('Positive share (%)', s, 1),
+          fld('Negative share (%)', 100 - s, 1),
+          fld('Ratio larger : smaller class', Math.max(p, n) / Math.min(p, n), 2)
+        ],
+        work: [
+          `P = ${c.tp} + ${c.fn} = ${p}, N = ${c.fp} + ${c.tn} = ${n}, T = ${t}`,
+          `Positive share = ${p} / ${t} × 100 = ${num(s, 1)}%, negative share = ${num(100 - s, 1)}%`,
+          `Ratio = ${Math.max(p, n)} / ${Math.min(p, n)} = ${num(Math.max(p, n) / Math.min(p, n))} → ${s >= 40 && s <= 60 ? 'balanced' : 'imbalanced'}`
+        ]
+      },
+      {
+        title: 'Calculate accuracy, precision, recall and F1 score of Model_3.',
+        fields: [
+          fld('Correct predictions (TP + TN)', c.tp + c.tn, 0),
+          fld('Predicted positives (TP + FP)', c.tp + c.fp, 0),
+          fld('Actual positives (TP + FN)', p, 0),
+          fld('Accuracy', (c.tp + c.tn) / t, 2),
+          fld('Precision', c.tp / (c.tp + c.fp), 2),
+          fld('Recall', c.tp / (c.tp + c.fn), 2),
+          fld('F1 score', f1Of(c), 2)
+        ],
+        work: [
+          `Accuracy = (${c.tp} + ${c.tn}) / ${t} = ${num((c.tp + c.tn) / t)}`,
+          `Precision = ${c.tp} / (${c.tp} + ${c.fp}) = ${num(c.tp / (c.tp + c.fp))}`,
+          `Recall = ${c.tp} / (${c.tp} + ${c.fn}) = ${num(c.tp / (c.tp + c.fn))}`,
+          `F1 = 2 × ${num(m3.p)} × ${num(m3.r)} / (${num(m3.p)} + ${num(m3.r)}) = ${num(f1Of(c))}`
+        ]
+      },
+      {
+        title: 'False positives and false negatives are equally costly. Which metric should be used, and which model (1, 2 or 3) is best? Enter the model number.',
+        fields: [fld('Best model by F1', e.bf, 0)],
+        work: [`Use F1: ${[...e.m, m3].map((x, i) => `Model_${i + 1} = ${num(x.f1)}`).join(', ')}`, `Largest F1 → Model_${e.bf}`]
+      },
+      {
+        title: 'False negatives are more costly than false positives. Which metric should be used, and which model (1, 2 or 3) is best? Enter the model number.',
+        fields: [fld('Best model by Recall', e.br, 0)],
+        work: [`Use Recall: ${[...e.m, m3].map((x, i) => `Model_${i + 1} = ${num(x.r)}`).join(', ')}`, `Largest Recall → Model_${e.br}`]
+      }
+    ];
+  };
+
+  const exam = {
+    make: makeExam,
+    context: e =>
+      `<p>The table shows the results of two models trained by your colleagues.</p>` +
+      H.table(
+        ['Model', 'Accuracy', 'Precision', 'Recall', 'F1 Score'],
+        e.m.map((x, i) => [`Model_${i + 1}`, x.acc, x.p, x.r, x.f1]),
+        { rowHeads: true }
+      ) +
+      `<p>You trained a new model, Model_3, on the same data and got this confusion matrix:</p>` +
+      matrix(e.c),
+    parts: examParts
+  };
+
+  TOPICS.push({ id: 'metrics', title: 'Classification Metrics', subs: [confusion, prf, compare], exam });
 })();

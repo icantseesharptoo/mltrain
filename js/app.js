@@ -8,7 +8,8 @@ const Store = (() => {
   const KEY = 'ml-trainer-v1';
   const fresh = () => ({
     xp: 0, attempts: 0, correct: 0, solved: 0, hard: 0,
-    bestCombo: 0, bestClean: 0, streak: 0, lastDay: '', badges: {}, progress: {}
+    bestCombo: 0, bestClean: 0, streak: 0, lastDay: '', badges: {}, progress: {},
+    exams: 0, examBest: {}
   });
   let data;
   try {
@@ -68,6 +69,8 @@ const BADGES = [
   { id: 'clean', name: 'Sharp Mind', desc: '5 correct in a row without hints', test: s => s.bestClean >= 5 },
   { id: 'days', name: 'Regular', desc: 'Practise 3 days in a row', test: s => s.streak >= 3 },
   { id: 'lvl5', name: 'Level 5', desc: 'Reach level 5', test: s => levelOf(s.xp) >= 5 },
+  { id: 'exam80', name: 'Exam Ready', desc: 'Score 80% in any exam', test: s => Object.values(s.examBest).some(v => v >= 80) },
+  { id: 'examall', name: 'Exam Champion', desc: 'Score 80% in the exam of every topic', test: s => TOPICS.every(t => (s.examBest[t.id] || 0) >= 80) },
   ...TOPICS.map(t => ({
     id: `master-${t.id}`,
     name: `${t.title} Master`,
@@ -128,7 +131,7 @@ const renderHome = () => {
           <h3>${t.title}</h3>
           <span class="muted">${t.subs.length} subtopics</span>
           <div class="bar"><i style="width:${p}%"></i></div>
-          <span class="muted">${p}% complete</span>
+          <span class="muted">${p}% complete · exam best ${s.examBest[t.id] || 0}%</span>
         </a>`;
       }).join('')}
     </section>
@@ -139,12 +142,23 @@ const renderHome = () => {
     <p><button class="btn ghost" data-act="reset">Reset progress</button></p>`;
 };
 
-const renderTopic = id => {
+const X = { topic: null, data: null, parts: [], flat: [], hints: [], done: false };
+
+const renderTopic = (id, tab) => {
   const t = TOPICS.find(x => x.id === id);
   if (!t) return renderHome();
-  app.innerHTML = `
+  X.topic = t;
+  const head = `
     <a class="back" href="#/">← Topics</a>
     <h1>${t.title}</h1>
+    <div class="tabs">${[['subtopics', 'Subtopics'], ['exam', 'Exam']]
+      .map(([k, n]) => `<a class="${(tab || 'subtopics') === k ? 'on' : ''}" href="#/topic/${id}/${k}">${n}</a>`)
+      .join('')}</div>`;
+  if (tab === 'exam') {
+    app.innerHTML = `${head}<div id="exam"></div>`;
+    return newExam();
+  }
+  app.innerHTML = `${head}
     <section class="grid">
       ${t.subs.map(sub => {
         const p = pct(subDone(sub), subCells(sub));
@@ -297,7 +311,7 @@ const parse = raw => {
   return s === '' ? NaN : Number(s);
 };
 
-const tol = f => (f.dp >= 2 ? 0.011 : f.dp === 1 ? 0.11 : 1e-6);
+const tol = f => f.tol ?? (f.dp >= 2 ? 0.011 : f.dp === 1 ? 0.11 : 1e-6);
 
 const feedback = (msg, kind) => {
   $('#feedback').innerHTML = `<div class="fb ${kind}">${msg}</div>`;
@@ -333,15 +347,119 @@ const award = t => {
   s.bestClean = Math.max(s.bestClean, clean);
   const k = pKey(t.sub, t.si, t.level);
   s.progress[k] = (s.progress[k] || 0) + 1;
+  settle(s, before);
+  return { gain, bonus };
+};
+
+const settle = (s, levelBefore) => {
   BADGES.forEach(b => {
     if (!s.badges[b.id] && b.test(s)) {
       s.badges[b.id] = Date.now();
       toast(`Badge unlocked: ${b.name}`, 'badge');
     }
   });
-  if (levelOf(s.xp) > before) toast(`Level up! You are now level ${levelOf(s.xp)}`, 'level');
+  if (levelOf(s.xp) > levelBefore) toast(`Level up! You are now level ${levelOf(s.xp)}`, 'level');
   Store.save();
-  return { gain, bonus };
+};
+
+const newExam = () => {
+  const ex = X.topic.exam;
+  X.data = ex.make();
+  X.parts = ex.parts(X.data);
+  X.flat = X.parts.flatMap(p => p.fields);
+  X.hints = X.parts.map(() => 0);
+  X.done = false;
+  drawExam();
+};
+
+const drawExam = () => {
+  let k = 0;
+  const cell = f => `<input data-k="${k++}" inputmode="decimal" autocomplete="off" placeholder="${placeholder(f)}">`;
+  const partHTML = (p, pi) => {
+    const body = p.grid
+      ? H.table(
+          ['', ...p.grid.head],
+          p.grid.rows.map((r, ri) => [r, ...p.grid.head.map((_, ci) => cell(p.fields[ri * p.grid.head.length + ci]))]),
+          { rowHeads: true }
+        )
+      : `<div class="fields">${p.fields.map(f => `<label class="fld"><span>${f.label}</span><b>=</b>${cell(f)}</label>`).join('')}</div>`;
+    return `<section class="card part">
+      <h3>${String.fromCharCode(97 + pi)}) ${p.title}</h3>
+      ${body}
+      <div class="actions"><button class="btn" data-act="x-hint" data-part="${pi}" id="xb${pi}">Hint (0/${p.work.length})</button></div>
+      <ol class="hints" id="xh${pi}"></ol>
+    </section>`;
+  };
+  $('#exam').innerHTML = `
+    <div class="card">${X.topic.exam.context(X.data)}</div>
+    ${X.parts.map(partHTML).join('')}
+    <div class="actions" id="xactions">
+      <button class="btn primary" data-act="x-check">Check answers</button>
+      <button class="btn" data-act="x-submit">Submit exam</button>
+      <button class="btn ghost" data-act="x-new">New exam</button>
+    </div>
+    <div id="x-result"></div>`;
+};
+
+const gradeExam = () => {
+  const inputs = [...document.querySelectorAll('#exam input')];
+  let ok = 0;
+  inputs.forEach((inp, i) => {
+    const v = parse(inp.value);
+    const good = !Number.isNaN(v) && Math.abs(v - X.flat[i].value) <= tol(X.flat[i]);
+    inp.classList.toggle('good', good);
+    inp.classList.toggle('bad', !good && inp.value.trim() !== '');
+    if (good) ok++;
+  });
+  return { ok, total: inputs.length, inputs };
+};
+
+const examHint = el => {
+  const pi = Number(el.dataset.part);
+  const work = X.parts[pi].work;
+  if (X.done || X.hints[pi] >= work.length) return;
+  X.hints[pi]++;
+  $(`#xh${pi}`).innerHTML = work
+    .slice(0, X.hints[pi])
+    .map((l, i) => `<li><b>Step ${i + 1}</b> ${l}</li>`)
+    .join('');
+  el.textContent = `Hint (${X.hints[pi]}/${work.length})`;
+  if (X.hints[pi] >= work.length) el.disabled = true;
+};
+
+const examCheck = () => {
+  if (X.done) return;
+  const g = gradeExam();
+  $('#x-result').innerHTML = `<div class="card"><span class="score">${g.ok} / ${g.total}</span> values correct so far</div>`;
+};
+
+const examSubmit = () => {
+  if (X.done) return;
+  const g = gradeExam();
+  X.done = true;
+  g.inputs.forEach((inp, i) => {
+    inp.disabled = true;
+    if (!inp.classList.contains('good')) {
+      inp.classList.add('bad');
+      inp.insertAdjacentHTML('afterend', `<small class="ans">${num(X.flat[i].value, X.flat[i].dp)}</small>`);
+    }
+  });
+  X.parts.forEach((p, pi) => {
+    $(`#xh${pi}`).innerHTML = p.work.map((l, i) => `<li><b>Step ${i + 1}</b> ${l}</li>`).join('');
+    $(`#xb${pi}`).disabled = true;
+  });
+  const s = Store.get();
+  const before = levelOf(s.xp);
+  touchDay();
+  const p = Math.round((g.ok / g.total) * 100);
+  const hints = sum(X.hints);
+  const gain = Math.round(g.ok * 3 * (1 - 0.1 * Math.min(hints, 5))) + (p >= 90 ? 30 : 0);
+  s.xp += gain;
+  s.exams++;
+  s.examBest[X.topic.id] = Math.max(s.examBest[X.topic.id] || 0, p);
+  settle(s, before);
+  renderHud();
+  $('#x-result').innerHTML = `<div class="card"><span class="score">${g.ok} / ${g.total} (${p}%)</span> · +${gain} XP. Correct values are shown in green next to wrong or empty fields.</div>`;
 };
 
 const check = () => {
@@ -426,6 +544,10 @@ const actions = {
     drawExample();
   },
   start: el => startTask(Number(el.dataset.step), Number(el.dataset.lv)),
+  'x-hint': examHint,
+  'x-check': examCheck,
+  'x-submit': examSubmit,
+  'x-new': newExam,
   check,
   hint,
   solution,
@@ -446,7 +568,7 @@ const render = () => {
   const [view, a, b] = location.hash.replace(/^#\/?/, '').split('/');
   renderHud();
   window.scrollTo(0, 0);
-  if (view === 'topic') renderTopic(a);
+  if (view === 'topic') renderTopic(a, b);
   else if (view === 'sub') renderSub(a, b || 'formulas');
   else if (view === 'sheet') renderSheet();
   else renderHome();

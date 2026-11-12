@@ -20,7 +20,7 @@ const R = {
 const rnd = (x, d = 2) => Math.round((x + Number.EPSILON) * 10 ** d) / 10 ** d;
 const num = (x, d = 2) => String(rnd(x, d)).replace('-', '−');
 const sum = arr => arr.reduce((s, v) => s + v, 0);
-const fld = (label, value, dp = 2) => ({ label, value, dp });
+const fld = (label, value, dp = 2, tol) => ({ label, value, dp, tol });
 
 const H = {
   fr: (n, d) => `<span class="fr"><span>${n}</span><span>${d}</span></span>`,

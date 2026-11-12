@@ -213,5 +213,82 @@
     ]
   };
 
-  TOPICS.push({ id: 'regression', title: 'Linear Regression Evaluation', subs: [errorSub, mseSub, r2Sub] });
+  const makeExam = () => {
+    for (;;) {
+      const a0 = R.int(4, 8);
+      const b0 = R.int(20, 40);
+      const pts = [1, 3, 5, 7, 9].map(x => ({ x, y: a0 * x + b0 + R.int(-5, 6) }));
+      const models = [
+        { a: a0 + R.pick([-1, 0, 1]), b: b0 + R.int(-5, 5) },
+        { a: a0 + R.pick([-1, 1]), b: b0 + R.int(-6, 6) }
+      ].map(m => ({ ...m, pts, t: 0 }));
+      if (models[0].a === models[1].a && models[0].b === models[1].b) continue;
+      if (Math.abs(stats(models[0]).mse - stats(models[1]).mse) >= 2) return { models, pts };
+    }
+  };
+
+  const mseFields = (c, k) => [
+    ...c.pts.map((p, i) => fld(`Model_${k} error e${i + 1} (x = ${p.x})`, res(c, p), 0)),
+    fld(`Model_${k} sum of squared errors`, stats(c).sse, 0),
+    fld(`Model_${k} MSE`, stats(c).mse, 2)
+  ];
+
+  const mseWork = (c, k) => [
+    `Model_${k}: errors ${c.pts.map(p => num(res(c, p))).join(', ')}`,
+    `SSE = ${c.pts.map(p => sq(res(c, p))).join(' + ')} = ${stats(c).sse}, MSE = ${stats(c).sse} / ${stats(c).n} = ${num(stats(c).mse)}`
+  ];
+
+  const examParts = e => {
+    const [m1, m2] = e.models;
+    const best = stats(m1).mse <= stats(m2).mse ? 0 : 1;
+    const c = e.models[best];
+    const st = stats(c);
+    return [
+      {
+        title: 'Calculate the error of every point, the sum of squared errors and the MSE of Model_1.',
+        fields: mseFields(m1, 1),
+        work: mseWork(m1, 1)
+      },
+      {
+        title: 'Calculate the error of every point, the sum of squared errors and the MSE of Model_2.',
+        fields: mseFields(m2, 2),
+        work: mseWork(m2, 2)
+      },
+      {
+        title: 'Which model is more plausible? Enter its number (the one with the smaller MSE).',
+        fields: [fld('Better model', best + 1, 0)],
+        work: [`MSE: Model_1 = ${num(stats(m1).mse)}, Model_2 = ${num(stats(m2).mse)} → Model_${best + 1}`]
+      },
+      {
+        title: `Calculate R² for Model_${best + 1}: the mean of y, SS_res, SS_tot and R².`,
+        fields: [
+          fld('Mean ȳ', st.mean, 2),
+          fld('SS_res', st.sse, 0),
+          fld('SS_tot', st.sst, 2),
+          fld('R²', st.r2, 3)
+        ],
+        work: [
+          `ȳ = ${sum(c.pts.map(p => p.y))} / ${st.n} = ${num(st.mean)}`,
+          `SS_res = ${st.sse}`,
+          `SS_tot = ${c.pts.map(p => num(sq(p.y - st.mean))).join(' + ')} = ${num(st.sst)}`,
+          `R² = 1 − ${st.sse} / ${num(st.sst)} = ${num(st.r2, 3)}`
+        ]
+      },
+      {
+        title: 'Interpret R²: what percentage of the variation in y does the model explain?',
+        fields: [fld('Variation explained (%)', st.r2 * 100, 1)],
+        work: [`R² × 100 = ${num(st.r2 * 100, 1)}% of the variation in the exam score is explained by the model`]
+      }
+    ];
+  };
+
+  const exam = {
+    make: makeExam,
+    context: e =>
+      `<p>The table shows the number of hours studied (x) and the exam score (y). Two colleagues fitted linear regression models.</p>${dataTable(e.models[0])}` +
+      `<p>Model_1: <b>y = ${e.models[0].a}x + ${e.models[0].b}</b><br>Model_2: <b>y = ${e.models[1].a}x + ${e.models[1].b}</b></p>`,
+    parts: examParts
+  };
+
+  TOPICS.push({ id: 'regression', title: 'Linear Regression Evaluation', subs: [errorSub, mseSub, r2Sub], exam });
 })();

@@ -238,5 +238,63 @@
     ]
   };
 
-  TOPICS.push({ id: 'recommender', title: 'Item-Based Collaborative Filtering', subs: [cosine, predict] });
+  const PAIRS = [[0, 1], [0, 2], [1, 2], [0, 3], [1, 3], [2, 3]];
+  const pairName = ([a, b]) => `M${a + 1} – M${b + 1}`;
+
+  const makeExam = () => {
+    for (;;) {
+      const c = {
+        users: ['U1', 'U2', 'U3', 'U4', 'U5'],
+        movies: ['M1', 'M2', 'M3', 'M4'],
+        r: Array.from({ length: 5 }, () => Array.from({ length: 4 }, () => (R.chance(0.3) ? null : R.int(1, 5))))
+      };
+      if (!PAIRS.every(([a, b]) => common({ ...c, a, b }).length >= 2)) continue;
+      const targets = c.r.map((_, u) => u).filter(u => c.r[u][3] == null);
+      if (!targets.length || targets.length > 2) continue;
+      if (!targets.every(u => c.r[u].slice(0, 3).filter(v => v != null).length >= 2)) continue;
+      return c;
+    }
+  };
+
+  const examParts = c => {
+    const ps = PAIRS.map(([a, b]) => parts({ ...c, a, b }));
+    const sims = ps.slice(3).map(p => rnd(p.sim, 2));
+    const targets = c.r.map((_, u) => u).filter(u => c.r[u][3] == null);
+    const preds = targets.map(u => {
+      const items = [0, 1, 2].filter(i => c.r[u][i] != null);
+      const numr = sum(items.map(i => sims[i] * c.r[u][i]));
+      const den = sum(items.map(i => sims[i]));
+      return { u, items, numr, den, pred: numr / den };
+    });
+    const simFields = ps.flatMap(p => [fld('', p.dot, 0), fld('', p.na, 2), fld('', p.nb, 2), fld('', p.sim, 2)]);
+    const predFields = preds.flatMap(p => [fld('', p.numr, 2, 0.05), fld('', p.den, 2, 0.05), fld('', p.pred, 2, 0.05)]);
+    return [
+      {
+        title: 'Calculate the similarity matrix for the movies using cosine similarity. Use only users who rated both movies. For each pair give the dot product, the two vector lengths and the similarity.',
+        grid: { head: ['Dot product', 'Length of first', 'Length of second', 'Similarity'], rows: PAIRS.map(pairName) },
+        fields: simFields,
+        work: PAIRS.map(([a, b], k) => {
+          const p = ps[k];
+          return `${pairName([a, b])}: users ${p.co.map(o => c.users[o.u]).join(', ')}; dot = ${p.dot}; ‖M${a + 1}‖ = √${p.sa} = ${num(p.na)}; ‖M${b + 1}‖ = √${p.sb} = ${num(p.nb)}; sim = ${p.dot} / (${num(p.na)} × ${num(p.nb)}) = ${num(p.sim)}`;
+        })
+      },
+      {
+        title: 'Predict the ratings of M4 for the users who have not rated it, using item-based collaborative filtering. Round similarities to 2 decimals before using them.',
+        grid: { head: ['Numerator', 'Denominator', 'Predicted rating'], rows: preds.map(p => c.users[p.u]) },
+        fields: predFields,
+        work: preds.map(
+          p =>
+            `${c.users[p.u]}: (${p.items.map(i => `${num(sims[i])}×${c.r[p.u][i]}`).join(' + ')}) / (${p.items.map(i => num(sims[i])).join(' + ')}) = ${num(p.numr)} / ${num(p.den)} = ${num(p.pred)}`
+        )
+      }
+    ];
+  };
+
+  const exam = {
+    make: makeExam,
+    context: c => `<p>The ratings of four movies by five users are given (– means not rated).</p>${ratingsTable(c)}`,
+    parts: examParts
+  };
+
+  TOPICS.push({ id: 'recommender', title: 'Item-Based Collaborative Filtering', subs: [cosine, predict], exam });
 })();
